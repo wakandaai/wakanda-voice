@@ -163,7 +163,8 @@ async def main():
              "--model", stt_model,
              "--language", default_lang,
              "--port", str(stt_port),
-             "--device", args.device],
+             "--device", args.device,
+             "--no-preload"],
         port=stt_port,
     ))
 
@@ -174,7 +175,8 @@ async def main():
         cmd=[python, f"{project_root}/servers/mt_server.py",
              "--model", mt_model,
              "--port", str(mt_port),
-             "--device", args.device],
+             "--device", args.device,
+             "--no-preload"],
         port=mt_port,
     ))
 
@@ -185,7 +187,8 @@ async def main():
         cmd=[python, f"{project_root}/servers/tts_server.py",
              "--model", tts_model,
              "--port", str(tts_port),
-             "--device", args.device],
+             "--device", args.device,
+             "--no-preload"],
         port=tts_port,
     ))
 

@@ -33,7 +33,7 @@ LANG_TO_MMS = {
     "ibo": "ibo",  # Igbo
     "igb": "ibo",  # alias
     "bem": "bem",
-    "swa": "swa",
+    "swa": "swh",
     "kin": "kin",
     "eng": "eng",
     "fra": "fra",
@@ -212,6 +212,8 @@ def main():
                         help="Model to preload on startup")
     parser.add_argument("--language", default="eng",
                         help="Default language adapter to load")
+    parser.add_argument("--no-preload", action="store_true",
+                        help="Start without loading a model (wait for config)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -223,14 +225,15 @@ def main():
     server = STTServer(host=args.host, port=args.port, device=args.device)
 
     async def start():
-        # Preload model
-        await server.load_model(args.model)
-        server.current_model_name = args.model
-        server.metrics.model_name = args.model
-        server.metrics.model_loaded = True
-
-        # Set default language
-        server._set_language(args.language)
+        if not args.no_preload:
+            await server.load_model(args.model)
+            server.current_model_name = args.model
+            server.metrics.model_name = args.model
+            server.metrics.model_loaded = True
+            # Set default language
+            server._set_language(args.language)
+        else:
+            logger.info("Started without preloading — waiting for config message")
 
         # Start serving
         await server.serve()

@@ -1,16 +1,8 @@
 """
 Wakanda Voice Pipeline — LiveKit Entry Point
 
-Joins a LiveKit room as a server-side participant, subscribes to user audio,
-runs it through the pipeline, and publishes synthesized audio back.
-
 Usage:
-    # 1. Install LiveKit Server:  curl -sSL https://get.livekit.io | bash
-    # 2. Start LiveKit:           livekit-server --dev --bind 0.0.0.0
-    # 3. Start model servers (same as before)
-    # 4. Start this:              python orchestrator/main.py --config configs/default.yaml
-    # 5. Start token server:      python scripts/token_server.py
-    # 6. Open browser:            http://localhost:7881
+    python orchestrator/main.py --config configs/default.yaml
 """
 
 from __future__ import annotations
@@ -25,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
+from aiohttp import web
 from livekit import rtc, api
 
 from orchestrator.config import load_config
@@ -34,15 +27,6 @@ logger = logging.getLogger(__name__)
 
 
 class LiveKitBridge:
-    """
-    Bridges LiveKit rooms to the Wakanda Voice pipeline orchestrator.
-
-    - Joins a LiveKit room as "wakanda-bot"
-    - Subscribes to audio from human participants
-    - Feeds audio through orchestrator (VAD → STT → MT → TTS)
-    - Publishes TTS audio back to the room
-    - Sends subtitles and state via data channel
-    """
 
     def __init__(self, config_path: str):
         self.config = load_config(config_path)
@@ -50,28 +34,34 @@ class LiveKitBridge:
         self.audio_source: rtc.AudioSource | None = None
         self.orchestrator: Orchestrator | None = None
         self.tts_sample_rate = self.config.tts.sample_rate or 16000
+        self.models_ready = False
 
     async def start(self, room_name: str = "wakanda-room"):
-        # Create orchestrator
+        # Create orchestrator (don't connect to model servers yet)
         self.orchestrator = Orchestrator(self.config)
-
-        # Wire orchestrator callbacks to LiveKit
         self.orchestrator.on_audio = self._on_pipeline_audio
         self.orchestrator.on_subtitle = self._on_pipeline_subtitle
         self.orchestrator.on_state = self._on_pipeline_state
 
-        # Connect to model servers
-        logger.info("Connecting to model servers...")
-        await self.orchestrator.connect()
-        logger.info("Model servers connected")
+        logger.info("Orchestrator created — waiting for user language selection")
 
-        # Set up LiveKit event handlers
+        # ── Start HTTP config endpoint ──
+        app = web.Application(middlewares=[self._cors_middleware])
+        app.router.add_post("/configure", self._handle_configure)
+        app.router.add_options("/configure", self._handle_options)
+        app.router.add_get("/status", self._handle_status)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", 8080)
+        await site.start()
+        logger.info("Config endpoint at http://0.0.0.0:8080/configure")
+
+        # ── Connect to LiveKit ──
         self.room.on("track_subscribed", self._on_track_subscribed)
         self.room.on("participant_connected", self._on_participant_connected)
         self.room.on("participant_disconnected", self._on_participant_disconnected)
-        self.room.on("data_received", self._on_data_received)
 
-        # Generate access token for the bot
         token = (
             api.AccessToken(
                 api_key=self.config.livekit_api_key,
@@ -91,7 +81,6 @@ class LiveKitBridge:
             .to_jwt()
         )
 
-        # Connect to LiveKit room
         logger.info(f"Connecting to LiveKit room '{room_name}' at {self.config.livekit_url}")
         await self.room.connect(
             self.config.livekit_url,
@@ -100,7 +89,7 @@ class LiveKitBridge:
         )
         logger.info(f"Connected to room: {self.room.name}")
 
-        # Create audio source for publishing TTS output
+        # Publish audio track for TTS output
         self.audio_source = rtc.AudioSource(
             sample_rate=self.tts_sample_rate,
             num_channels=1,
@@ -111,14 +100,6 @@ class LiveKitBridge:
             rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE),
         )
         logger.info("Published audio track: agent-voice")
-
-        # Send initial state
-        await self._send_data({
-            "type": "config",
-            "mode": self.config.mode,
-            "language": self.config.default_lang,
-        })
-
         logger.info("LiveKit bridge ready. Waiting for participants...")
 
         try:
@@ -135,6 +116,99 @@ class LiveKitBridge:
         await self.room.disconnect()
         logger.info("Shutdown complete")
 
+    # ── HTTP config endpoint ──
+
+    @web.middleware
+    async def _cors_middleware(self, request, handler):
+        response = await handler(request)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        return response
+
+    async def _handle_options(self, request):
+        return web.Response(status=200)
+
+    async def _handle_status(self, request):
+        return web.json_response({
+            "models_ready": self.models_ready,
+            "mode": self.orchestrator.mode if self.orchestrator else None,
+            "language": self.orchestrator.user_lang if self.orchestrator else None,
+        })
+
+    async def _handle_configure(self, request):
+        data = await request.json()
+        logger.info(f"Config received: {data}")
+
+        # Require all fields
+        required = ["source", "target", "source_nllb", "target_nllb", "mode"]
+        missing = [f for f in required if f not in data]
+        if missing:
+            return web.json_response(
+                {"status": "error", "message": f"Missing fields: {missing}"},
+                status=400,
+            )
+
+        src = data["source"]
+        tgt = data["target"]
+        src_nllb = data["source_nllb"]
+        tgt_nllb = data["target_nllb"]
+        mode = data["mode"]
+
+        # Update orchestrator config
+        self.orchestrator.set_language(src)
+        self.orchestrator.mode = mode
+        self.orchestrator.config.s2st.source_lang = src_nllb
+        self.orchestrator.config.s2st.target_lang = tgt_nllb
+
+        # Load models
+        try:
+            await self._load_models(src, tgt, src_nllb, tgt_nllb)
+            return web.json_response({"status": "ok", "models_ready": True})
+        except Exception as e:
+            logger.error(f"Failed to load models: {e}", exc_info=True)
+            return web.json_response(
+                {"status": "error", "message": str(e)},
+                status=500,
+            )
+
+    async def _load_models(self, src: str, tgt: str, src_nllb: str, tgt_nllb: str):
+        logger.info(f"Loading models for {src} → {tgt}...")
+
+        # Connect to model servers if not already connected
+        if not self.models_ready:
+            await self.orchestrator.connect()
+
+        # Configure STT for source language
+        await self.orchestrator.stt_client.configure(
+            model=self.config.stt.model,
+            language=src,
+        )
+        logger.info(f"STT configured for {src}")
+
+        # Configure MT
+        await self.orchestrator.mt_client.configure(
+            model=self.config.mt.model,
+        )
+        logger.info("MT configured")
+
+        # Configure TTS for target language
+        # MMS-TTS uses per-language model repos
+        tts_lang_map = {
+            "swa": "swh", "ibo": "ibo", "yor": "yor", "hau": "hau",
+            "bem": "bem", "kin": "kin", "eng": "eng", "fra": "fra",
+        }
+        tts_code = tts_lang_map.get(tgt, tgt)
+        tts_model = f"facebook/mms-tts-{tts_code}"
+        await self.orchestrator.tts_client.configure(
+            model=tts_model,
+            language=tgt,
+        )
+        logger.info(f"TTS configured for {tgt} ({tts_model})")
+
+        self.models_ready = True
+        logger.info("All models loaded and ready")
+
     # ── LiveKit event handlers ──
 
     def _on_track_subscribed(self, track, publication, participant):
@@ -149,37 +223,6 @@ class LiveKitBridge:
     def _on_participant_disconnected(self, participant):
         logger.info(f"Participant disconnected: {participant.identity}")
 
-    def _on_data_received(self, data):
-        try:
-            payload = json.loads(data.data.decode())
-            msg_type = payload.get("type")
-
-            if msg_type == "set_language":
-                lang = payload.get("language", "eng")
-                logger.info(f"Language set by user: {lang}")
-                if self.orchestrator:
-                    self.orchestrator.set_language(lang)
-
-            elif msg_type == "set_mode":
-                mode = payload.get("mode", "s2st")
-                logger.info(f"Mode set by user: {mode}")
-                if self.orchestrator:
-                    self.orchestrator.mode = mode
-
-            elif msg_type == "set_languages":
-                src = payload.get("source", "eng")
-                tgt = payload.get("target", "eng")
-                src_nllb = payload.get("source_nllb", "eng_Latn")
-                tgt_nllb = payload.get("target_nllb", "eng_Latn")
-                logger.info(f"Languages set: {src} → {tgt} ({src_nllb} → {tgt_nllb})")
-                if self.orchestrator:
-                    self.orchestrator.set_language(src)
-                    self.orchestrator.config.s2st.source_lang = src_nllb
-                    self.orchestrator.config.s2st.target_lang = tgt_nllb
-
-        except Exception as e:
-            logger.error(f"Error parsing data message: {e}")
-
     # ── Audio processing ──
 
     async def _process_audio_stream(self, audio_stream, participant):
@@ -190,9 +233,10 @@ class LiveKitBridge:
                 frame = frame_event.frame
                 pcm_bytes = frame.data.tobytes()
                 frame_count += 1
-                if frame_count % 100 == 1:
-                    logger.info(f"Audio frame #{frame_count}: {len(pcm_bytes)} bytes, sr={frame.sample_rate}, ch={frame.num_channels}, samples={frame.samples_per_channel}")
-                await self.orchestrator.process_audio(pcm_bytes)
+                if frame_count % 500 == 1:
+                    logger.info(f"Audio frame #{frame_count}: {len(pcm_bytes)} bytes")
+                if self.models_ready:
+                    await self.orchestrator.process_audio(pcm_bytes)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -221,7 +265,6 @@ class LiveKitBridge:
             chunk = audio_np[offset:offset + samples_per_frame]
             if len(chunk) < samples_per_frame:
                 chunk = np.pad(chunk, (0, samples_per_frame - len(chunk)))
-
             frame = rtc.AudioFrame(
                 data=chunk.tobytes(),
                 sample_rate=self.tts_sample_rate,
@@ -232,19 +275,22 @@ class LiveKitBridge:
             offset += samples_per_frame
 
     async def _on_pipeline_subtitle(self, text: str, lang: str):
-        await self._send_data({"type": "subtitle", "text": text, "language": lang})
-
-    async def _on_pipeline_state(self, stage: str, detail: str | None):
-        await self._send_data({"type": "state", "stage": stage, "detail": detail})
-
-    async def _send_data(self, payload: dict):
         try:
             await self.room.local_participant.publish_data(
-                json.dumps(payload).encode(),
+                json.dumps({"type": "subtitle", "text": text, "language": lang}).encode(),
                 reliable=True,
             )
         except Exception as e:
-            logger.error(f"Failed to send data: {e}")
+            logger.error(f"Failed to send subtitle: {e}")
+
+    async def _on_pipeline_state(self, stage: str, detail: str | None):
+        try:
+            await self.room.local_participant.publish_data(
+                json.dumps({"type": "state", "stage": stage, "detail": detail}).encode(),
+                reliable=True,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send state: {e}")
 
 
 async def main():

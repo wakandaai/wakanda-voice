@@ -97,7 +97,7 @@ select:focus { border-color: var(--blue); }
   <h1>🌍 Wakanda Voice</h1>
   <p class="tagline">Speech-to-speech translation & multilingual voice bot</p>
 
-  <!-- STEP 1 -->
+  <!-- STEP 1: Select Task -->
   <div class="step">
     <div class="step-header">
       <div class="step-num active" id="s1n">1</div>
@@ -117,7 +117,7 @@ select:focus { border-color: var(--blue); }
     </div>
   </div>
 
-  <!-- STEP 2 -->
+  <!-- STEP 2: Select Languages -->
   <div class="step">
     <div class="step-header">
       <div class="step-num" id="s2n">2</div>
@@ -149,7 +149,7 @@ select:focus { border-color: var(--blue); }
     </div>
   </div>
 
-  <!-- STEP 3 -->
+  <!-- STEP 3: Connect -->
   <div class="step">
     <div class="step-header">
       <div class="step-num" id="s3n">3</div>
@@ -180,141 +180,223 @@ select:focus { border-color: var(--blue); }
 
 <script src="livekit-client.umd.js"></script>
 <script>
-let room=null, connected=false, selectedTask=null, srcLang=null, tgtLang=null;
+let room = null, connected = false, selectedTask = null, srcLang = null, tgtLang = null;
 
-const L={
-  yor:{name:'Yoruba',nllb:'yor_Latn'},hau:{name:'Hausa',nllb:'hau_Latn'},
-  ibo:{name:'Igbo',nllb:'ibo_Latn'},bem:{name:'Bemba',nllb:'bem_Latn'},
-  swa:{name:'Swahili',nllb:'swh_Latn'},kin:{name:'Kinyarwanda',nllb:'kin_Latn'},
-  eng:{name:'English',nllb:'eng_Latn'},fra:{name:'French',nllb:'fra_Latn'},
+// Orchestrator HTTP endpoint (port 8080)
+const CONFIG_URL = 'http://' + location.hostname + ':8080';
+
+const L = {
+  yor:{name:'Yoruba',nllb:'yor_Latn'}, hau:{name:'Hausa',nllb:'hau_Latn'},
+  ibo:{name:'Igbo',nllb:'ibo_Latn'}, bem:{name:'Bemba',nllb:'bem_Latn'},
+  swa:{name:'Swahili',nllb:'swh_Latn'}, kin:{name:'Kinyarwanda',nllb:'kin_Latn'},
+  eng:{name:'English',nllb:'eng_Latn'}, fra:{name:'French',nllb:'fra_Latn'},
 };
 
-const SL={transcribing:'📝 Transcribing...',translating_inbound:'🔄 Translating...',
-  thinking:'🧠 Thinking...',tool_call:'🔧 Calling tool...',
-  translating_outbound:'🔄 Translating back...',speaking:'🔊 Speaking...',idle:''};
+const SL = {
+  transcribing:'📝 Transcribing...', translating_inbound:'🔄 Translating...',
+  thinking:'🧠 Thinking...', tool_call:'🔧 Calling tool...',
+  translating_outbound:'🔄 Translating back...', speaking:'🔊 Speaking...',
+  loading_models:'⏳ Loading models...', idle:'',
+};
 
-function selectTask(t){
-  selectedTask=t;
-  document.getElementById('task-s2st').classList.toggle('selected',t==='s2st');
-  document.getElementById('task-bot').classList.toggle('selected',t==='multilingual_voice_bot');
-  document.getElementById('s1n').className='step-num done';
-  document.getElementById('s2n').className='step-num active';
-  document.getElementById('s2t').className='step-title active';
+// ── Step 1: Task ──
+
+function selectTask(t) {
+  selectedTask = t;
+  document.getElementById('task-s2st').classList.toggle('selected', t === 's2st');
+  document.getElementById('task-bot').classList.toggle('selected', t === 'multilingual_voice_bot');
+  document.getElementById('s1n').className = 'step-num done';
+  document.getElementById('s2n').className = 'step-num active';
+  document.getElementById('s2t').className = 'step-title active';
   document.getElementById('lang-card').classList.remove('disabled');
-  if(t==='multilingual_voice_bot'){
-    document.getElementById('tgt-label').textContent='BOT LANGUAGE (LLM)';
-    document.getElementById('tgt-lang').value='eng';
-    document.getElementById('tgt-lang').disabled=true;
+  if (t === 'multilingual_voice_bot') {
+    document.getElementById('tgt-label').textContent = 'BOT LANGUAGE (LLM)';
+    document.getElementById('tgt-lang').value = 'eng';
+    document.getElementById('tgt-lang').disabled = true;
   } else {
-    document.getElementById('tgt-label').textContent='TARGET LANGUAGE';
-    document.getElementById('tgt-lang').disabled=false;
+    document.getElementById('tgt-label').textContent = 'TARGET LANGUAGE';
+    document.getElementById('tgt-lang').disabled = false;
   }
   validateLangs();
 }
 
-function validateLangs(){
-  srcLang=document.getElementById('src-lang').value;
-  tgtLang=document.getElementById('tgt-lang').value;
-  const v=document.getElementById('lang-val'), cc=document.getElementById('connect-card'),
-    cb=document.getElementById('connect-btn'), mi=document.getElementById('model-info');
-  if(!selectedTask) return;
-  if(selectedTask==='s2st'&&srcLang===tgtLang){
-    v.className='validation err'; v.textContent='Source and target must be different.';
-    cc.classList.add('disabled'); cb.disabled=true; return;
+// ── Step 2: Languages ──
+
+function validateLangs() {
+  srcLang = document.getElementById('src-lang').value;
+  tgtLang = document.getElementById('tgt-lang').value;
+  const v = document.getElementById('lang-val');
+  const cc = document.getElementById('connect-card');
+  const cb = document.getElementById('connect-btn');
+  const mi = document.getElementById('model-info');
+  if (!selectedTask) return;
+  if (selectedTask === 's2st' && srcLang === tgtLang) {
+    v.className = 'validation err';
+    v.textContent = 'Source and target must be different.';
+    cc.classList.add('disabled'); cb.disabled = true; return;
   }
-  const s=L[srcLang], t=L[tgtLang];
-  if(selectedTask==='s2st'){
-    mi.innerHTML='📝 <b>STT:</b> MMS-1B → '+s.name+'<br>🔄 <b>MT:</b> NLLB ('+s.name+' → '+t.name+')<br>🔊 <b>TTS:</b> MMS-TTS → '+t.name;
-    v.className='validation ok'; v.textContent='✓ '+s.name+' → '+t.name+' translation ready';
+  const s = L[srcLang], t = L[tgtLang];
+  if (selectedTask === 's2st') {
+    mi.innerHTML = '📝 <b>STT:</b> MMS-1B → '+s.name+'<br>🔄 <b>MT:</b> NLLB ('+s.name+' → '+t.name+')<br>🔊 <b>TTS:</b> MMS-TTS → '+t.name;
+    v.className = 'validation ok';
+    v.textContent = '✓ '+s.name+' → '+t.name+' translation ready';
   } else {
-    mi.innerHTML='📝 <b>STT:</b> MMS-1B → '+s.name+'<br>🔄 <b>MT in:</b> '+s.name+' → English<br>🧠 <b>LLM:</b> AfriqueLLM (English)<br>🔄 <b>MT out:</b> English → '+s.name+'<br>🔊 <b>TTS:</b> MMS-TTS → '+s.name;
-    v.className='validation ok'; v.textContent='✓ '+s.name+' voice bot ready';
+    mi.innerHTML = '📝 <b>STT:</b> MMS-1B → '+s.name+'<br>🔄 <b>MT in:</b> '+s.name+' → English<br>🧠 <b>LLM:</b> AfriqueLLM (English)<br>🔄 <b>MT out:</b> English → '+s.name+'<br>🔊 <b>TTS:</b> MMS-TTS → '+s.name;
+    v.className = 'validation ok';
+    v.textContent = '✓ '+s.name+' voice bot ready';
   }
-  document.getElementById('s2n').className='step-num done';
-  document.getElementById('s3n').className='step-num active';
-  document.getElementById('s3t').className='step-title active';
-  cc.classList.remove('disabled'); cb.disabled=false;
+  document.getElementById('s2n').className = 'step-num done';
+  document.getElementById('s3n').className = 'step-num active';
+  document.getElementById('s3t').className = 'step-title active';
+  cc.classList.remove('disabled'); cb.disabled = false;
 }
 
-async function toggleConn(){ connected ? await disc() : await conn(); }
+// ── Step 3: Connect ──
 
-async function conn(){
-  const btn=document.getElementById('connect-btn');
-  btn.disabled=true; btn.textContent='Connecting...';
-  setSt('processing','Connecting...');
+async function toggleConn() { connected ? await disc() : await conn(); }
+
+async function conn() {
+  const btn = document.getElementById('connect-btn');
+  btn.disabled = true;
+  btn.textContent = 'Loading models...';
+  setSt('processing', 'Loading models...');
+
   try {
-    const token=await getToken();
-    room=new LivekitClient.Room({adaptiveStream:true,dynacast:true});
-    room.on(LivekitClient.RoomEvent.DataReceived,(d)=>{
-      try{handleData(JSON.parse(new TextDecoder().decode(d)))}catch(e){}
+    // Step A: Tell orchestrator to load models for this language pair
+    const configResp = await fetch(CONFIG_URL + '/configure', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        mode: selectedTask,
+        source: srcLang,
+        target: tgtLang,
+        source_nllb: L[srcLang].nllb,
+        target_nllb: L[tgtLang].nllb,
+      }),
     });
-    room.on(LivekitClient.RoomEvent.TrackSubscribed,(track,pub,p)=>{
-      if(track.kind==='audio'&&p.identity==='wakanda-bot'){
-        const el=track.attach();el.id='bot-audio';document.body.appendChild(el);
+
+    if (!configResp.ok) {
+      const err = await configResp.json();
+      throw new Error(err.message || 'Failed to configure models');
+    }
+
+    setSt('processing', 'Models loaded. Connecting audio...');
+    btn.textContent = 'Connecting audio...';
+
+    // Step B: Connect to LiveKit for audio
+    const token = await getToken();
+    room = new LivekitClient.Room({adaptiveStream: true, dynacast: true});
+
+    room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, p) => {
+      if (track.kind === 'audio' && p.identity === 'wakanda-bot') {
+        const el = track.attach();
+        el.id = 'bot-audio';
+        document.body.appendChild(el);
       }
     });
-    room.on(LivekitClient.RoomEvent.Disconnected,()=>onDisc());
-    await room.connect('ws://'+location.hostname+':7880',token);
+
+    room.on(LivekitClient.RoomEvent.DataReceived, (data) => {
+      try {
+        const p = JSON.parse(new TextDecoder().decode(data));
+        if (p.type === 'subtitle') {
+          const role = (p.language === srcLang || p.language === L[srcLang]?.nllb) ? 'user' : 'bot';
+          addTurn(p.text, p.language, role);
+        } else if (p.type === 'state') {
+          setPS(p.stage, p.detail);
+        }
+      } catch(e) {}
+    });
+
+    room.on(LivekitClient.RoomEvent.Disconnected, () => onDisc());
+
+    await room.connect('ws://' + location.hostname + ':7880', token);
     await room.localParticipant.setMicrophoneEnabled(true);
-    await sendD({type:'set_language',language:srcLang});
-    await sendD({type:'set_mode',mode:selectedTask});
-    await sendD({type:'set_languages',source:srcLang,target:tgtLang,
-      source_nllb:L[srcLang].nllb,target_nllb:L[tgtLang].nllb});
-    connected=true;
-    const tn=selectedTask==='s2st'?'S2ST':'Voice Bot';
-    setSt('connected',tn+' — '+L[srcLang].name+' → '+L[tgtLang].name);
-    btn.textContent='Disconnect';btn.classList.add('connected');btn.disabled=false;
-    document.getElementById('convo').innerHTML='';
-    document.querySelectorAll('#task-card .task-btn, #lang-card select').forEach(e=>e.style.pointerEvents='none');
-  }catch(e){
-    setSt('error','Error: '+e.message);btn.textContent='Connect';btn.disabled=false;
+
+    connected = true;
+    const tn = selectedTask === 's2st' ? 'S2ST' : 'Voice Bot';
+    setSt('connected', tn + ' — ' + L[srcLang].name + ' → ' + L[tgtLang].name);
+    btn.textContent = 'Disconnect';
+    btn.classList.add('connected');
+    btn.disabled = false;
+
+    document.getElementById('convo').innerHTML = '';
+
+    // Lock config while connected
+    document.querySelectorAll('#task-card .task-btn, #lang-card select').forEach(
+      e => e.style.pointerEvents = 'none'
+    );
+
+  } catch (e) {
+    console.error('Connection failed:', e);
+    setSt('error', 'Error: ' + e.message);
+    btn.textContent = 'Connect';
+    btn.disabled = false;
   }
 }
 
-async function disc(){
-  if(room){await room.disconnect();room=null;}
-  const el=document.getElementById('bot-audio');if(el)el.remove();
+async function disc() {
+  if (room) { await room.disconnect(); room = null; }
+  const el = document.getElementById('bot-audio');
+  if (el) el.remove();
   onDisc();
 }
 
-function onDisc(){
-  connected=false;const btn=document.getElementById('connect-btn');
-  btn.textContent='Connect';btn.classList.remove('connected');btn.disabled=false;
-  setSt('','Disconnected');setPS(null);
-  document.querySelectorAll('#task-card .task-btn, #lang-card select').forEach(e=>e.style.pointerEvents='');
+function onDisc() {
+  connected = false;
+  const btn = document.getElementById('connect-btn');
+  btn.textContent = 'Connect';
+  btn.classList.remove('connected');
+  btn.disabled = false;
+  setSt('', 'Disconnected');
+  setPS(null);
+  document.querySelectorAll('#task-card .task-btn, #lang-card select').forEach(
+    e => e.style.pointerEvents = ''
+  );
 }
 
-function setSt(s,t){
-  document.getElementById('status-dot').className='status-dot '+s;
-  document.getElementById('status-text').textContent=t;
+// ── UI helpers ──
+
+function setSt(s, t) {
+  document.getElementById('status-dot').className = 'status-dot ' + s;
+  document.getElementById('status-text').textContent = t;
 }
-function setPS(stage,detail){
-  const el=document.getElementById('ps'),ind=document.getElementById('ai');
-  if(!stage||stage==='idle'){el.textContent='';ind.classList.remove('active');return;}
-  el.textContent=(SL[stage]||stage)+(detail?' ('+detail+')':'');
-  stage==='speaking'?ind.classList.add('active'):ind.classList.remove('active');
+
+function setPS(stage, detail) {
+  const el = document.getElementById('ps');
+  const ind = document.getElementById('ai');
+  if (!stage || stage === 'idle') {
+    el.textContent = '';
+    ind.classList.remove('active');
+    return;
+  }
+  el.textContent = (SL[stage] || stage) + (detail ? ' (' + detail + ')' : '');
+  stage === 'speaking' ? ind.classList.add('active') : ind.classList.remove('active');
 }
-function addTurn(text,lang,role){
-  const c=document.getElementById('convo'),d=document.createElement('div');d.className='turn';
-  const ln=L[lang]?L[lang].name:lang;
-  d.innerHTML='<div class="role '+role+'">'+(role==='user'?'👤 You':'🤖 Bot')+
-    '<span class="lang-tag">'+ln+'</span></div><div class="text">'+esc(text)+'</div>';
-  c.appendChild(d);c.scrollTop=c.scrollHeight;
+
+function addTurn(text, lang, role) {
+  const c = document.getElementById('convo');
+  const d = document.createElement('div');
+  d.className = 'turn';
+  const ln = L[lang] ? L[lang].name : lang;
+  d.innerHTML = '<div class="role ' + role + '">' + (role === 'user' ? '👤 You' : '🤖 Bot') +
+    '<span class="lang-tag">' + ln + '</span></div><div class="text">' + esc(text) + '</div>';
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
 }
-function esc(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML;}
-async function sendD(p){if(!room||!connected)return;
-  await room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(p)),{reliable:true});}
-function handleData(p){
-  if(p.type==='subtitle'){
-    const role=(p.language===srcLang||p.language===L[srcLang]?.nllb)?'user':'bot';
-    addTurn(p.text,p.language,role);
-  }else if(p.type==='state') setPS(p.stage,p.detail);
-}
-async function getToken(){
-  try{const r=await fetch('http://'+location.hostname+':'+location.port+'/token?identity=user-'+Date.now()+'&room=wakanda-room');
-    if(r.ok)return(await r.json()).token;}catch(e){}
-  const t=prompt('Paste a LiveKit token (generate with lk CLI)');
-  if(!t)throw new Error('No token provided');return t.trim();
+
+function esc(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+// ── Token ──
+
+async function getToken() {
+  try {
+    const r = await fetch('http://' + location.hostname + ':' + location.port +
+      '/token?identity=user-' + Date.now() + '&room=wakanda-room');
+    if (r.ok) return (await r.json()).token;
+  } catch (e) {}
+  const t = prompt('Paste a LiveKit token (generate with lk CLI)');
+  if (!t) throw new Error('No token provided');
+  return t.trim();
 }
 </script>
 </body>

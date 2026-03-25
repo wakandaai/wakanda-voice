@@ -124,6 +124,8 @@ def main():
     parser.add_argument("--port", type=int, default=8003)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--model", default="facebook/mms-tts-yor")
+    parser.add_argument("--no-preload", action="store_true",
+                        help="Start without loading a model (wait for config)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -135,10 +137,13 @@ def main():
     server = TTSServer(host=args.host, port=args.port, device=args.device)
 
     async def start():
-        await server.load_model(args.model)
-        server.current_model_name = args.model
-        server.metrics.model_name = args.model
-        server.metrics.model_loaded = True
+        if not args.no_preload:
+            await server.load_model(args.model)
+            server.current_model_name = args.model
+            server.metrics.model_name = args.model
+            server.metrics.model_loaded = True
+        else:
+            logger.info("Started without preloading — waiting for config message")
         await server.serve()
 
     asyncio.run(start())
