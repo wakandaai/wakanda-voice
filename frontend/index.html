@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wakanda Voice</title>
+<style>
+:root {
+  --bg: #0f1117; --surface: #1a1d27; --surface2: #242836; --border: #2e3345;
+  --text: #e4e4e7; --dim: #71717a; --green: #22c55e; --blue: #3b82f6;
+  --red: #ef4444; --orange: #f59e0b; --purple: #a855f7;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center; padding: 24px;
+}
+.container { width: 100%; max-width: 520px; margin-top: 32px; }
+h1 { font-size: 1.5em; font-weight: 700; text-align: center; margin-bottom: 4px; }
+.tagline { text-align: center; color: var(--dim); font-size: 0.85em; margin-bottom: 32px; }
+.step { margin-bottom: 20px; }
+.step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.step-num {
+  width: 28px; height: 28px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 0.8em;
+  font-weight: 700; background: var(--surface2); color: var(--dim);
+  border: 1.5px solid var(--border); flex-shrink: 0;
+}
+.step-num.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.step-num.done { background: var(--green); color: #fff; border-color: var(--green); }
+.step-title { font-size: 0.9em; font-weight: 600; color: var(--dim); }
+.step-title.active { color: var(--text); }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; transition: opacity 0.2s;
+}
+.card.disabled { opacity: 0.4; pointer-events: none; }
+.task-options { display: flex; gap: 10px; }
+.task-btn {
+  flex: 1; padding: 16px 12px; border: 2px solid var(--border);
+  border-radius: 10px; background: var(--surface2); cursor: pointer;
+  text-align: center; transition: all 0.15s;
+}
+.task-btn:hover { border-color: var(--blue); }
+.task-btn.selected { border-color: var(--blue); background: rgba(59,130,246,0.1); }
+.task-btn .icon { font-size: 1.8em; margin-bottom: 6px; }
+.task-btn .label { font-size: 0.85em; font-weight: 600; }
+.task-btn .desc { font-size: 0.72em; color: var(--dim); margin-top: 4px; line-height: 1.3; }
+.lang-row { display: flex; gap: 12px; align-items: center; }
+.lang-row .arrow { color: var(--dim); font-size: 1.2em; flex-shrink: 0; }
+select {
+  flex: 1; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 0.9em; outline: none;
+}
+select:focus { border-color: var(--blue); }
+.lang-label { font-size: 0.72em; color: var(--dim); margin-bottom: 4px; font-weight: 500; }
+.validation { margin-top: 10px; padding: 8px 12px; border-radius: 6px; font-size: 0.8em; display: none; }
+.validation.ok { display: block; background: rgba(34,197,94,0.1); color: var(--green); }
+.validation.err { display: block; background: rgba(239,68,68,0.1); color: var(--red); }
+.btn {
+  width: 100%; padding: 14px; border: none; border-radius: 10px;
+  font-size: 1em; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.btn-connect { background: var(--green); color: #000; }
+.btn-connect:hover { background: #16a34a; }
+.btn-connect.connected { background: var(--red); color: #fff; }
+.btn-connect:disabled { opacity: 0.4; cursor: not-allowed; }
+.status-bar { display: flex; align-items: center; gap: 8px; padding: 10px 0; font-size: 0.82em; color: var(--dim); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
+.status-dot.connected { background: var(--green); }
+.status-dot.processing { background: var(--orange); animation: pulse 1s infinite; }
+.status-dot.error { background: var(--red); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.pipeline-state { font-size: 0.8em; color: var(--orange); min-height: 20px; padding: 4px 0; }
+.audio-indicator { display: flex; align-items: center; justify-content: center; gap: 3px; height: 28px; }
+.audio-bar { width: 4px; height: 6px; background: var(--green); border-radius: 2px; }
+.audio-indicator.active .audio-bar { animation: bars 0.6s ease-in-out infinite; }
+.audio-indicator.active .audio-bar:nth-child(1){animation-delay:0s}
+.audio-indicator.active .audio-bar:nth-child(2){animation-delay:0.1s}
+.audio-indicator.active .audio-bar:nth-child(3){animation-delay:0.2s}
+.audio-indicator.active .audio-bar:nth-child(4){animation-delay:0.3s}
+.audio-indicator.active .audio-bar:nth-child(5){animation-delay:0.15s}
+@keyframes bars { 0%,100%{height:6px} 50%{height:22px} }
+.convo { min-height: 160px; max-height: 350px; overflow-y: auto; }
+.convo-empty { color: var(--dim); font-size: 0.85em; text-align: center; padding: 40px 0; }
+.turn { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88em; }
+.turn .role { font-size: 0.7em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.turn .role.user { color: var(--blue); } .turn .role.bot { color: var(--green); }
+.turn .lang-tag { font-size: 0.68em; color: var(--dim); margin-left: 4px; }
+.turn .text { margin-top: 2px; line-height: 1.5; }
+.footer { text-align: center; font-size: 0.68em; color: var(--dim); margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🌍 Wakanda Voice</h1>
+  <p class="tagline">Speech-to-speech translation & multilingual voice bot</p>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num active" id="s1n">1</div>
+      <div class="step-title active" id="s1t">Select Task</div>
+    </div>
+    <div class="card" id="task-card">
+      <div class="task-options">
+        <div class="task-btn" id="task-s2st" onclick="selectTask('s2st')">
+          <div class="icon">🔄</div><div class="label">S2ST Translation</div>
+          <div class="desc">Speech → Translate → Speech</div>
+        </div>
+        <div class="task-btn" id="task-bot" onclick="selectTask('multilingual_voice_bot')">
+          <div class="icon">🤖</div><div class="label">Voice Bot</div>
+          <div class="desc">Multilingual assistant with tools</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num" id="s2n">2</div>
+      <div class="step-title" id="s2t">Select Languages</div>
+    </div>
+    <div class="card disabled" id="lang-card">
+      <div class="lang-row">
+        <div style="flex:1">
+          <div class="lang-label">SOURCE LANGUAGE</div>
+          <select id="src-lang" onchange="validateLangs()">
+            <option value="yor">Yoruba</option><option value="hau">Hausa</option>
+            <option value="ibo">Igbo</option><option value="bem">Bemba</option>
+            <option value="swa">Swahili</option><option value="kin">Kinyarwanda</option>
+            <option value="eng">English</option><option value="fra">French</option>
+          </select>
+        </div>
+        <div class="arrow">→</div>
+        <div style="flex:1">
+          <div class="lang-label" id="tgt-label">TARGET LANGUAGE</div>
+          <select id="tgt-lang" onchange="validateLangs()">
+            <option value="eng">English</option><option value="fra">French</option>
+            <option value="yor">Yoruba</option><option value="hau">Hausa</option>
+            <option value="ibo">Igbo</option><option value="bem">Bemba</option>
+            <option value="swa">Swahili</option><option value="kin">Kinyarwanda</option>
+          </select>
+        </div>
+      </div>
+      <div class="validation" id="lang-val"></div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num" id="s3n">3</div>
+      <div class="step-title" id="s3t">Connect</div>
+    </div>
+    <div class="card disabled" id="connect-card">
+      <div id="model-info" style="font-size:0.78em;color:var(--dim);margin-bottom:14px;line-height:1.6;"></div>
+      <button class="btn btn-connect" id="connect-btn" onclick="toggleConn()" disabled>Connect</button>
+      <div class="status-bar">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Ready to connect</span>
+      </div>
+      <div class="pipeline-state" id="ps"></div>
+      <div class="audio-indicator" id="ai">
+        <div class="audio-bar"></div><div class="audio-bar"></div>
+        <div class="audio-bar"></div><div class="audio-bar"></div><div class="audio-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conversation -->
+  <div class="card">
+    <div style="font-size:0.75em;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px;">Conversation</div>
+    <div class="convo" id="convo"><div class="convo-empty">Select a task and languages to begin</div></div>
+  </div>
+  <div class="footer">Wakanda AI — Cascaded Speech Pipeline</div>
+</div>
+
+<script src="livekit-client.umd.js"></script>
+<script>
+let room=null, connected=false, selectedTask=null, srcLang=null, tgtLang=null;
+
+const L={
+  yor:{name:'Yoruba',nllb:'yor_Latn'},hau:{name:'Hausa',nllb:'hau_Latn'},
+  ibo:{name:'Igbo',nllb:'ibo_Latn'},bem:{name:'Bemba',nllb:'bem_Latn'},
+  swa:{name:'Swahili',nllb:'swh_Latn'},kin:{name:'Kinyarwanda',nllb:'kin_Latn'},
+  eng:{name:'English',nllb:'eng_Latn'},fra:{name:'French',nllb:'fra_Latn'},
+};
+
+const SL={transcribing:'📝 Transcribing...',translating_inbound:'🔄 Translating...',
+  thinking:'🧠 Thinking...',tool_call:'🔧 Calling tool...',
+  translating_outbound:'🔄 Translating back...',speaking:'🔊 Speaking...',idle:''};
+
+function selectTask(t){
+  selectedTask=t;
+  document.getElementById('task-s2st').classList.toggle('selected',t==='s2st');
+  document.getElementById('task-bot').classList.toggle('selected',t==='multilingual_voice_bot');
+  document.getElementById('s1n').className='step-num done';
+  document.getElementById('s2n').className='step-num active';
+  document.getElementById('s2t').className='step-title active';
+  document.getElementById('lang-card').classList.remove('disabled');
+  if(t==='multilingual_voice_bot'){
+    document.getElementById('tgt-label').textContent='BOT LANGUAGE (LLM)';
+    document.getElementById('tgt-lang').value='eng';
+    document.getElementById('tgt-lang').disabled=true;
+  } else {
+    document.getElementById('tgt-label').textContent='TARGET LANGUAGE';
+    document.getElementById('tgt-lang').disabled=false;
+  }
+  validateLangs();
+}
+
+function validateLangs(){
+  srcLang=document.getElementById('src-lang').value;
+  tgtLang=document.getElementById('tgt-lang').value;
+  const v=document.getElementById('lang-val'), cc=document.getElementById('connect-card'),
+    cb=document.getElementById('connect-btn'), mi=document.getElementById('model-info');
+  if(!selectedTask) return;
+  if(selectedTask==='s2st'&&srcLang===tgtLang){
+    v.className='validation err'; v.textContent='Source and target must be different.';
+    cc.classList.add('disabled'); cb.disabled=true; return;
+  }
+  const s=L[srcLang], t=L[tgtLang];
+  if(selectedTask==='s2st'){
+    mi.innerHTML='📝 <b>STT:</b> MMS-1B → '+s.name+'<br>🔄 <b>MT:</b> NLLB ('+s.name+' → '+t.name+')<br>🔊 <b>TTS:</b> MMS-TTS → '+t.name;
+    v.className='validation ok'; v.textContent='✓ '+s.name+' → '+t.name+' translation ready';
+  } else {
+    mi.innerHTML='📝 <b>STT:</b> MMS-1B → '+s.name+'<br>🔄 <b>MT in:</b> '+s.name+' → English<br>🧠 <b>LLM:</b> AfriqueLLM (English)<br>🔄 <b>MT out:</b> English → '+s.name+'<br>🔊 <b>TTS:</b> MMS-TTS → '+s.name;
+    v.className='validation ok'; v.textContent='✓ '+s.name+' voice bot ready';
+  }
+  document.getElementById('s2n').className='step-num done';
+  document.getElementById('s3n').className='step-num active';
+  document.getElementById('s3t').className='step-title active';
+  cc.classList.remove('disabled'); cb.disabled=false;
+}
+
+async function toggleConn(){ connected ? await disc() : await conn(); }
+
+async function conn(){
+  const btn=document.getElementById('connect-btn');
+  btn.disabled=true; btn.textContent='Connecting...';
+  setSt('processing','Connecting...');
+  try {
+    const token=await getToken();
+    room=new LivekitClient.Room({adaptiveStream:true,dynacast:true});
+    room.on(LivekitClient.RoomEvent.DataReceived,(d)=>{
+      try{handleData(JSON.parse(new TextDecoder().decode(d)))}catch(e){}
+    });
+    room.on(LivekitClient.RoomEvent.TrackSubscribed,(track,pub,p)=>{
+      if(track.kind==='audio'&&p.identity==='wakanda-bot'){
+        const el=track.attach();el.id='bot-audio';document.body.appendChild(el);
+      }
+    });
+    room.on(LivekitClient.RoomEvent.Disconnected,()=>onDisc());
+    await room.connect('ws://'+location.hostname+':7880',token);
+    await room.localParticipant.setMicrophoneEnabled(true);
+    await sendD({type:'set_language',language:srcLang});
+    await sendD({type:'set_mode',mode:selectedTask});
+    await sendD({type:'set_languages',source:srcLang,target:tgtLang,
+      source_nllb:L[srcLang].nllb,target_nllb:L[tgtLang].nllb});
+    connected=true;
+    const tn=selectedTask==='s2st'?'S2ST':'Voice Bot';
+    setSt('connected',tn+' — '+L[srcLang].name+' → '+L[tgtLang].name);
+    btn.textContent='Disconnect';btn.classList.add('connected');btn.disabled=false;
+    document.getElementById('convo').innerHTML='';
+    document.querySelectorAll('#task-card .task-btn, #lang-card select').forEach(e=>e.style.pointerEvents='none');
+  }catch(e){
+    setSt('error','Error: '+e.message);btn.textContent='Connect';btn.disabled=false;
+  }
+}
+
+async function disc(){
+  if(room){await room.disconnect();room=null;}
+  const el=document.getElementById('bot-audio');if(el)el.remove();
+  onDisc();
+}
+
+function onDisc(){
+  connected=false;const btn=document.getElementById('connect-btn');
+  btn.textContent='Connect';btn.classList.remove('connected');btn.disabled=false;
+  setSt('','Disconnected');setPS(null);
+  document.querySelectorAll('#task-card .task-btn, #lang-card select').forEach(e=>e.style.pointerEvents='');
+}
+
+function setSt(s,t){
+  document.getElementById('status-dot').className='status-dot '+s;
+  document.getElementById('status-text').textContent=t;
+}
+function setPS(stage,detail){
+  const el=document.getElementById('ps'),ind=document.getElementById('ai');
+  if(!stage||stage==='idle'){el.textContent='';ind.classList.remove('active');return;}
+  el.textContent=(SL[stage]||stage)+(detail?' ('+detail+')':'');
+  stage==='speaking'?ind.classList.add('active'):ind.classList.remove('active');
+}
+function addTurn(text,lang,role){
+  const c=document.getElementById('convo'),d=document.createElement('div');d.className='turn';
+  const ln=L[lang]?L[lang].name:lang;
+  d.innerHTML='<div class="role '+role+'">'+(role==='user'?'👤 You':'🤖 Bot')+
+    '<span class="lang-tag">'+ln+'</span></div><div class="text">'+esc(text)+'</div>';
+  c.appendChild(d);c.scrollTop=c.scrollHeight;
+}
+function esc(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+async function sendD(p){if(!room||!connected)return;
+  await room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(p)),{reliable:true});}
+function handleData(p){
+  if(p.type==='subtitle'){
+    const role=(p.language===srcLang||p.language===L[srcLang]?.nllb)?'user':'bot';
+    addTurn(p.text,p.language,role);
+  }else if(p.type==='state') setPS(p.stage,p.detail);
+}
+async function getToken(){
+  try{const r=await fetch('http://'+location.hostname+':'+location.port+'/token?identity=user-'+Date.now()+'&room=wakanda-room');
+    if(r.ok)return(await r.json()).token;}catch(e){}
+  const t=prompt('Paste a LiveKit token (generate with lk CLI)');
+  if(!t)throw new Error('No token provided');return t.trim();
+}
+</script>
+</body>
+</html>

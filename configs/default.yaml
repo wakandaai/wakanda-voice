@@ -1,0 +1,60 @@
+# Wakanda Voice Pipeline — Default Configuration
+# Baseline models: MMS-1B (ASR) + NLLB-200 (MT) + MMS-TTS + AfriqueLLM
+
+livekit:
+  url: ws://localhost:7880
+  api_key: devkey
+  api_secret: secret
+
+mode: s2st  # "s2st" or "multilingual_voice_bot"
+default_lang: eng
+
+# ── Model Servers ──
+
+stt:
+  url: ws://localhost:8001
+  model: facebook/mms-1b-all
+  streaming: false
+
+mt:
+  url: ws://localhost:8002
+  model: facebook/nllb-200-1.3B
+  streaming: false
+
+tts:
+  url: ws://localhost:8003
+  model: facebook/mms-tts-kin
+  streaming: false
+  sample_rate: 16000
+
+llm:
+  url: http://localhost:8000/v1
+  model: almanach/AfriqueLLM-Qwen2.5-3B
+  provider: openai_compat
+
+# ── VAD ──
+
+vad:
+  threshold: 0.5
+  min_silence_ms: 700
+  min_speech_ms: 250
+
+# ── S2ST Mode Settings ──
+
+s2st:
+  source_lang: eng_Latn
+  target_lang: kin_Latn
+
+# ── Tools (voice bot mode only) ──
+
+tools:
+  web_search:
+    enabled: true
+    provider: serper
+    api_key: ${SEARCH_API_KEY}
+
+# ── Logging ──
+
+logging:
+  dir: ./logs
+  format: jsonl

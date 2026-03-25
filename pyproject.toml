@@ -1,0 +1,30 @@
+[project]
+name = "wakanda-voice"
+version = "0.1.0"
+description = "Configurable cascaded voice pipeline — S2ST and multilingual voice bot"
+requires-python = ">=3.10"
+dependencies = [
+    "websockets>=13.0",
+    "torch>=2.0",
+    "transformers>=4.40",
+    "numpy",
+    "onnxruntime",
+    "pyyaml",
+    "httpx",
+    "openai>=1.0",
+    "sounddevice",
+    "soundfile",
+    "livekit>=0.17",
+    "livekit-api>=0.7",
+]
+
+[project.optional-dependencies]
+vllm = ["vllm>=0.6"]
+dev = ["pytest", "pytest-asyncio"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["servers*", "orchestrator*"]
