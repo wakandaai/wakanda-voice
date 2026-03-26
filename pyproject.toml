@@ -1,26 +1,35 @@
 [project]
 name = "wakanda-voice"
 version = "0.1.0"
-description = "Configurable cascaded voice pipeline — S2ST and multilingual voice bot"
+description = "Configurable cascaded voice pipeline for African languages — S2ST and multilingual voice bot"
+readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
 dependencies = [
+    # Model serving
     "websockets>=13.0",
     "torch>=2.0",
     "transformers>=4.40",
     "numpy",
+    # VAD (Silero uses torch, but needs onnxruntime for some backends)
     "onnxruntime",
+    # Orchestrator
     "pyyaml",
     "httpx",
+    "aiohttp",
+    # LLM client
     "openai>=1.0",
+    # LiveKit
+    "livekit>=1.0",
+    "livekit-api>=0.7",
+    # Audio (for local testing)
     "sounddevice",
     "soundfile",
-    "livekit>=0.17",
-    "livekit-api>=0.7",
 ]
 
 [project.optional-dependencies]
 vllm = ["vllm>=0.6"]
-dev = ["pytest", "pytest-asyncio"]
+dev = ["pytest", "pytest-asyncio", "ruff"]
 
 [build-system]
 requires = ["setuptools>=68"]
