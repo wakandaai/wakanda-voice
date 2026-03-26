@@ -36,6 +36,7 @@ LANG_TO_MMS = {
     "swa": "swh",
     "kin": "kin",
     "eng": "eng",
+    "lug": "lug",
     "fra": "fra",
     # Add more as needed
 }

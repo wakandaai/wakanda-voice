@@ -197,6 +197,7 @@ class LiveKitBridge:
         tts_lang_map = {
             "swa": "swh", "ibo": "ibo", "yor": "yor", "hau": "hau",
             "bem": "bem", "kin": "kin", "eng": "eng", "fra": "fra",
+            "lug": "lug",
         }
         tts_code = tts_lang_map.get(tgt, tgt)
         tts_model = f"facebook/mms-tts-{tts_code}"
