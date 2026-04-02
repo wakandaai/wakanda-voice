@@ -35,7 +35,7 @@ LANG_CODE_MAP = {
     "fra": "fra_Latn",
     # Pass through codes that already have the _Script suffix
 }
-
+dtype_map = {"float16": torch.float16, "float32": torch.float32}
 
 def resolve_lang_code(code: str) -> str:
     """Resolve a short language code to NLLB format."""
@@ -63,7 +63,7 @@ class MTServer(BaseModelServer):
 
         logger.info(f"Loading MT model: {model_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, dtype=dtype_map[self.dtype]).to(self.device)
         self.model.eval()
         logger.info("MT model loaded successfully")
 
@@ -125,7 +125,8 @@ def main():
     parser = argparse.ArgumentParser(description="Wakanda Voice — MT Server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8002)
-    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--device", default="auto")
+    parser.add_argument("--dtype", default="float16")
     parser.add_argument("--model", default="facebook/nllb-200-3.3B")
     parser.add_argument("--no-preload", action="store_true",
                         help="Start without loading a model (wait for config)")
@@ -137,7 +138,7 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    server = MTServer(host=args.host, port=args.port, device=args.device)
+    server = MTServer(host=args.host, port=args.port, device=args.device, dtype=args.dtype)
 
     async def start():
         if not args.no_preload:
