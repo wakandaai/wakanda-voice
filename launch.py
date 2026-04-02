@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 
 import yaml
+from servers.device import detect_device, get_dtype_str
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ async def log_output(service: ServiceProcess):
 async def main():
     parser = argparse.ArgumentParser(description="Wakanda Voice — Launch all services")
     parser.add_argument("--config", default="configs/default.yaml")
-    parser.add_argument("--device", default="cuda", help="Device for model servers (cuda or cpu)")
+    parser.add_argument("--device", default="auto", help="Device for model servers")
     parser.add_argument("--livekit", action="store_true", help="Also start LiveKit Server")
     parser.add_argument("--frontend-port", type=int, default=3000)
     parser.add_argument("--no-orchestrator", action="store_true", help="Skip LiveKit orchestrator (model servers only)")
@@ -154,6 +155,11 @@ async def main():
             port=7880,
         ))
 
+    # set device for model servers
+    detected_device = detect_device(args.device)
+    dtype = get_dtype_str(detected_device)
+    logger.info(f"Using device: {colored(detected_device, C_CYAN)} with dtype {colored(str(dtype), C_CYAN)}")
+
     # ── STT Server ──
     stt_model = config["stt"]["model"]
     default_lang = config.get("default_lang", "eng")
@@ -163,7 +169,8 @@ async def main():
              "--model", stt_model,
              "--language", default_lang,
              "--port", str(stt_port),
-             "--device", args.device,
+             "--device", detected_device,
+             "--dtype", dtype,
              "--no-preload"],
         port=stt_port,
     ))
@@ -175,7 +182,8 @@ async def main():
         cmd=[python, f"{project_root}/servers/mt_server.py",
              "--model", mt_model,
              "--port", str(mt_port),
-             "--device", args.device,
+             "--device", detected_device,
+             "--dtype", dtype,
              "--no-preload"],
         port=mt_port,
     ))
@@ -187,7 +195,8 @@ async def main():
         cmd=[python, f"{project_root}/servers/tts_server.py",
              "--model", tts_model,
              "--port", str(tts_port),
-             "--device", args.device,
+             "--device", detected_device,
+             "--dtype", dtype,
              "--no-preload"],
         port=tts_port,
     ))

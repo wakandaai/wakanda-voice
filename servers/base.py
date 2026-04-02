@@ -59,10 +59,11 @@ class BaseModelServer(ABC):
         {"type": "ready"}
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8001, device: str = "cuda"):
+    def __init__(self, host: str = "0.0.0.0", port: int = 8001, device: str = "cuda", dtype: str = "float16"):
         self.host = host
         self.port = port
         self.device = device
+        self.dtype = dtype
         self.current_model_name: Optional[str] = None
         self.model: Any = None
         self.metrics = ServerMetrics()

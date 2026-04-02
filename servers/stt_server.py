@@ -41,6 +41,7 @@ LANG_TO_MMS = {
     # Add more as needed
 }
 
+dtype_map = {"float16": torch.float16, "float32": torch.float32}
 
 class STTServer(BaseModelServer):
     """
@@ -81,7 +82,7 @@ class STTServer(BaseModelServer):
 
         logger.info(f"Loading MMS model: {model_name}")
         self.processor = AutoProcessor.from_pretrained(model_name)
-        self.model = AutoModelForCTC.from_pretrained(model_name).to(self.device)
+        self.model = AutoModelForCTC.from_pretrained(model_name, torch_dtype=dtype_map[self.dtype]).to(self.device)
         self.model.eval()
         self.model_family = "mms"
         logger.info("MMS model loaded successfully")
@@ -94,8 +95,7 @@ class STTServer(BaseModelServer):
         self.processor = AutoProcessor.from_pretrained(model_name)
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_name,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-        ).to(self.device)
+            torch_dtype=dtype_map[self.dtype]).to(self.device)
         self.model.eval()
         self.model_family = "whisper"
         logger.info("Whisper model loaded successfully")
@@ -172,7 +172,7 @@ class STTServer(BaseModelServer):
             audio_np,
             sampling_rate=16000,
             return_tensors="pt",
-        ).to(self.device)
+        ).to(device=self.device, dtype=dtype_map[self.dtype])
 
         with torch.no_grad():
             logits = self.model(**inputs).logits
@@ -208,7 +208,8 @@ def main():
     parser = argparse.ArgumentParser(description="Wakanda Voice — STT Server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8001)
-    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--device", default="auto")
+    parser.add_argument("--dtype", default="float16")
     parser.add_argument("--model", default="facebook/mms-1b-all",
                         help="Model to preload on startup")
     parser.add_argument("--language", default="eng",
@@ -223,7 +224,8 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    server = STTServer(host=args.host, port=args.port, device=args.device)
+    
+    server = STTServer(host=args.host, port=args.port, device=args.device, dtype=args.dtype)
 
     async def start():
         if not args.no_preload:

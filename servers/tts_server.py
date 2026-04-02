@@ -34,6 +34,7 @@ MMS_TTS_MODELS = {
     "fra": "facebook/mms-tts-fra",
 }
 
+dtype_map = {"float16": torch.float16, "float32": torch.float32}
 
 class TTSServer(BaseModelServer):
     """
@@ -56,7 +57,7 @@ class TTSServer(BaseModelServer):
 
         logger.info(f"Loading TTS model: {model_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = VitsModel.from_pretrained(model_name).to(self.device)
+        self.model = VitsModel.from_pretrained(model_name, dtype=dtype_map[self.dtype]).to(self.device)
         self.model.eval()
         self.sample_rate = self.model.config.sampling_rate
         logger.info(f"TTS model loaded (sample_rate={self.sample_rate})")
@@ -122,7 +123,8 @@ def main():
     parser = argparse.ArgumentParser(description="Wakanda Voice — TTS Server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8003)
-    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--device", default="auto")
+    parser.add_argument("--dtype", default="float16")
     parser.add_argument("--model", default="facebook/mms-tts-yor")
     parser.add_argument("--no-preload", action="store_true",
                         help="Start without loading a model (wait for config)")
@@ -134,7 +136,7 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    server = TTSServer(host=args.host, port=args.port, device=args.device)
+    server = TTSServer(host=args.host, port=args.port, device=args.device, dtype=args.dtype)
 
     async def start():
         if not args.no_preload:
